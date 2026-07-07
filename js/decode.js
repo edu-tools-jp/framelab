@@ -184,6 +184,19 @@ export function isAudioDecodeSupported() {
   return typeof AudioDecoder !== 'undefined' && typeof EncodedAudioChunk !== 'undefined';
 }
 
+// AAC-LCのAudioSpecificConfig(ASC)を、サンプルレートとチャンネル数から組み立てる。
+// iPhoneの.movはコンテナ内にesds記述子が無いことがあり、その場合の代替として使う。
+const AAC_FREQ_TABLE = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+function buildAacAsc(sampleRate, channels) {
+  let freqIdx = AAC_FREQ_TABLE.indexOf(sampleRate);
+  if (freqIdx < 0) freqIdx = 4; // 不明なら44100扱い
+  const objType = 2; // AAC-LC
+  const chCfg = Math.min(Math.max(channels || 2, 1), 7);
+  const b0 = (objType << 3) | (freqIdx >> 1);
+  const b1 = ((freqIdx & 1) << 7) | (chCfg << 3);
+  return new Uint8Array([b0, b1]);
+}
+
 // 動画ファイルの音声トラックをPCMに復号して返す（iOSで確実に音声を取り出すための本命）。
 // 返り値 { channels:[Float32Array,...], sampleRate, numberOfChannels, duration } / 音声無しは null
 export async function decodeAudioPCM(file, mediaId) {
@@ -191,12 +204,21 @@ export async function decodeAudioPCM(file, mediaId) {
   const dem = await demux(file, mediaId);
   if (!dem.audio || !dem.audioSamples.length) return null;
 
+  // コーデック文字列を正規化（.movは "mp4a" とだけ報告されることがある → AAC-LCとして扱う）
+  let codec = dem.audio.codec || '';
+  if (codec === 'mp4a' || codec === 'aac' || codec.startsWith('mp4a.40')) {
+    if (!codec.startsWith('mp4a.40')) codec = 'mp4a.40.2';
+  }
+  // 記述子(ASC)：コンテナから取れなければ、サンプルレート/チャンネルから組み立てる
+  const description = dem.audio.description ||
+    ((codec.startsWith('mp4a.40')) ? buildAacAsc(dem.audio.sampleRate, dem.audio.numberOfChannels) : undefined);
+
   const config = {
-    codec: dem.audio.codec,
+    codec,
     sampleRate: dem.audio.sampleRate,
     numberOfChannels: dem.audio.numberOfChannels,
   };
-  if (dem.audio.description) config.description = dem.audio.description;
+  if (description) config.description = description;
 
   const sup = await AudioDecoder.isConfigSupported(config).catch(() => ({ supported: false }));
   if (!sup.supported) return null;
