@@ -213,6 +213,7 @@ button:disabled { opacity: 0.35; cursor: default; }
   position: relative;
   height: 22px;
   border-bottom: 1px solid var(--line);
+  touch-action: none; /* 指でなぞってスクラブできるように（スクロールに取られない） */
 }
 .tl-tick {
   position: absolute;
@@ -263,12 +264,38 @@ button:disabled { opacity: 0.35; cursor: default; }
   pointer-events: none;
   z-index: 5;
 }
-.tl-playhead::before {
+
+/* 再生ヘッドのつまみ：指で掴んでドラッグできる */
+.tl-ph-handle {
+  position: absolute;
+  top: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;   /* 見た目より大きい当たり判定 */
+  height: 40px;
+  pointer-events: auto;
+  touch-action: none;
+  cursor: grab;
+}
+.tl-ph-handle::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: -5px;
-  border: 6px solid transparent;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  background: var(--accent);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+}
+.tl-ph-handle::after {
+  content: '';
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
   border-top-color: var(--accent);
 }
 

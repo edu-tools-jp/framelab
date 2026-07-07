@@ -1,10 +1,12 @@
 // timeline.js — タイムラインUI（クリップ表示・選択・スクラブ・ズーム）
 
 import { state, on, clipDuration, totalDuration, setSelected, fmtTime } from './store.js';
-import { seek } from './player.js';
+import { seek, play, pause } from './player.js';
 
 let scrollEl, contentEl, rulerEl, trackEl, playheadEl;
 let scrubbing = false;
+let resumeAfterScrub = false;
+let lastScrubAt = 0;
 
 const TRACK_H = 64;
 
@@ -14,7 +16,9 @@ export function initTimeline(root) {
       <div class="tl-content" id="tl-content">
         <div class="tl-ruler" id="tl-ruler"></div>
         <div class="tl-track" id="tl-track"></div>
-        <div class="tl-playhead" id="tl-playhead"></div>
+        <div class="tl-playhead" id="tl-playhead">
+          <div class="tl-ph-handle" id="tl-ph-handle"></div>
+        </div>
       </div>
     </div>`;
   scrollEl = root.querySelector('#tl-scroll');
@@ -22,28 +26,58 @@ export function initTimeline(root) {
   rulerEl = root.querySelector('#tl-ruler');
   trackEl = root.querySelector('#tl-track');
   playheadEl = root.querySelector('#tl-playhead');
+  const handleEl = root.querySelector('#tl-ph-handle');
 
   on('clips', render);
   on('project', render);
   on('select', updateSelection);
   on('time', updatePlayhead);
 
-  // ルーラー／空きスペースのドラッグで再生位置を動かす（スクラブ）
+  // 再生ヘッドのつまみを指でドラッグ（touch-action:noneでスクロールと競合しない）
+  handleEl.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try { handleEl.setPointerCapture(e.pointerId); } catch { }
+    beginScrub(e);
+  });
+  handleEl.addEventListener('pointermove', (e) => { if (scrubbing) scrubTo(e); });
+  handleEl.addEventListener('pointerup', endScrub);
+  handleEl.addEventListener('pointercancel', endScrub);
+
+  // ルーラー／空きスペースのドラッグでも動かせる
   scrollEl.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('.tl-clip')) return; // クリップのタップは選択に使う
-    scrubbing = true;
-    scrollEl.setPointerCapture(e.pointerId);
-    scrubTo(e);
+    if (e.target.closest('.tl-clip') || e.target.closest('.tl-ph-handle')) return;
+    try { scrollEl.setPointerCapture(e.pointerId); } catch { }
+    beginScrub(e);
   });
   scrollEl.addEventListener('pointermove', (e) => { if (scrubbing) scrubTo(e); });
-  scrollEl.addEventListener('pointerup', () => { scrubbing = false; });
-  scrollEl.addEventListener('pointercancel', () => { scrubbing = false; });
+  scrollEl.addEventListener('pointerup', endScrub);
+  scrollEl.addEventListener('pointercancel', endScrub);
+}
+
+function beginScrub(e) {
+  scrubbing = true;
+  resumeAfterScrub = state.playing;
+  if (state.playing) pause(); // ドラッグ中は一時停止（終わったら再開）
+  lastScrubAt = 0;
+  scrubTo(e);
+}
+
+function endScrub() {
+  if (!scrubbing) return;
+  scrubbing = false;
+  if (resumeAfterScrub) play();
+  resumeAfterScrub = false;
 }
 
 function scrubTo(e) {
+  // シークの連発を抑える（40ms間隔）
+  const now = performance.now();
+  if (now - lastScrubAt < 40) return;
+  lastScrubAt = now;
   const rect = scrollEl.getBoundingClientRect();
   const x = e.clientX - rect.left + scrollEl.scrollLeft;
-  seek(x / state.pxPerSec);
+  seek(Math.max(0, x / state.pxPerSec));
 }
 
 export function setZoom(factor) {
