@@ -4,10 +4,10 @@
 
 import { Muxer, ArrayBufferTarget } from './vendor/mp4-muxer.mjs';
 import { compositeFrame } from './renderer.js';
-import { renderProjectAudio } from './audio-mix.js';
+import { renderProjectAudio, clearMixCache } from './audio-mix.js';
 import { seekToPaintable, attachDecodableVideo, primeVideo } from './importer.js';
 import { ensureLutLoaded } from './luts.js';
-import { ClipDecoder, isDecodeSupported } from './decode.js';
+import { ClipDecoder, isDecodeSupported, clearDemuxCache } from './decode.js';
 
 export function isWebCodecsExportSupported() {
   return typeof VideoEncoder !== 'undefined'
@@ -231,6 +231,9 @@ export async function exportVideoWC(project, { onProgress = () => {} } = {}) {
       v.remove();
     }
     videoPool.clear();
+    // 分解済みサンプル等のキャッシュを解放（メモリ肥大の防止）
+    clearDemuxCache();
+    clearMixCache();
   }
 }
 

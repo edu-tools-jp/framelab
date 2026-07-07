@@ -2,6 +2,7 @@
 // クリップの音声＋BGM＋アテレコを合成し、ダッキング（声の間だけBGMを下げる）も反映する
 
 import { getAnalysisAudio, detectSilences, invertToKeep } from './audio.js';
+import { decodeAudioPCM } from './decode.js';
 
 const decodeCache = new Map(); // mediaId -> AudioBuffer
 
@@ -18,12 +19,35 @@ export async function renderProjectAudio(project, sampleRate = 48000) {
   const length = Math.ceil(totalDur * sampleRate); // 映像の尺ぴったり（余白なし）
   const octx = new OfflineAudioContext(2, length, sampleRate);
 
-  async function decode(mediaId, file) {
+  // 音声トラック（BGM・アテレコ＝音声のみのファイル）は decodeAudioData で確実にデコードできる
+  async function decodeAudioFile(mediaId, file) {
     if (decodeCache.has(mediaId)) return decodeCache.get(mediaId);
     const buf = await file.arrayBuffer();
     const decoded = await octx.decodeAudioData(buf);
     decodeCache.set(mediaId, decoded);
     return decoded;
+  }
+
+  // 動画クリップの音声は、まず WebCodecs(AudioDecoder+mp4box) で取り出す（iOSで確実）。
+  // 失敗したら decodeAudioData にフォールバック。
+  async function decodeClipAudio(mediaId, file) {
+    if (decodeCache.has(mediaId)) return decodeCache.get(mediaId);
+    let buffer = null;
+    try {
+      const pcm = await decodeAudioPCM(file, mediaId);
+      if (pcm && pcm.channels[0]?.length) {
+        buffer = octx.createBuffer(pcm.numberOfChannels, pcm.channels[0].length, pcm.sampleRate);
+        for (let c = 0; c < pcm.numberOfChannels; c++) buffer.copyToChannel(pcm.channels[c], c);
+      }
+    } catch (e) {
+      console.warn('AudioDecoderでの音声抽出に失敗、decodeAudioDataへ:', e);
+    }
+    if (!buffer) {
+      const buf = await file.arrayBuffer();
+      buffer = await octx.decodeAudioData(buf);
+    }
+    decodeCache.set(mediaId, buffer);
+    return buffer;
   }
 
   // 1. 動画クリップの音声を時系列に並べる。同時に「声がある区間」も集める（ダッキング用）
@@ -33,11 +57,11 @@ export async function renderProjectAudio(project, sampleRate = 48000) {
     const dur = clip.out - clip.in;
     if (clip.kind === 'video') {
       try {
-        const decoded = await decode(clip.mediaId, clip.file);
+        const decoded = await decodeClipAudio(clip.mediaId, clip.file);
         const src = octx.createBufferSource();
         src.buffer = decoded;
         src.connect(octx.destination);
-        src.start(tl, clip.in, dur); // [in, out] をタイムライン tl に配置
+        src.start(tl, Math.min(clip.in, decoded.duration), Math.min(dur, Math.max(0, decoded.duration - clip.in))); // [in, out] をタイムライン tl に配置
       } catch (e) {
         console.warn('クリップ音声のデコード失敗:', clip.name, e);
       }
@@ -61,7 +85,7 @@ export async function renderProjectAudio(project, sampleRate = 48000) {
   for (const item of tracks) {
     if (!item.file) continue;
     try {
-      const decoded = await decode(item.mediaId, item.file);
+      const decoded = await decodeAudioFile(item.mediaId, item.file);
       const src = octx.createBufferSource();
       src.buffer = decoded;
       const gain = octx.createGain();
@@ -110,4 +134,4 @@ function mergeIntervals(intervals) {
   return out;
 }
 
-export function clearDecodeCache() { decodeCache.clear(); }
+export function clearMixCache() { decodeCache.clear(); }
