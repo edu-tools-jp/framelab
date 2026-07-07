@@ -5,7 +5,7 @@
 import { Muxer, ArrayBufferTarget } from './vendor/mp4-muxer.mjs';
 import { compositeFrame } from './renderer.js';
 import { renderProjectAudio } from './audio-mix.js';
-import { seekToPaintable } from './importer.js';
+import { seekToPaintable, attachDecodableVideo, primeVideo } from './importer.js';
 import { ensureLutLoaded } from './luts.js';
 
 export function isWebCodecsExportSupported() {
@@ -88,23 +88,16 @@ export async function exportVideoWC(project, { onProgress = () => {} } = {}) {
   });
   videoEncoder.configure(support.videoCfg);
 
-  // 書き出し用の動画要素を隠して置くコンテナ
-  // （iOSは画面外の <video> だとフレーム取得が不安定なため、極小で不可視にしてDOMに置く）
-  const hiddenBox = document.createElement('div');
-  hiddenBox.style.cssText = 'position:fixed;left:-9999px;top:0;width:16px;height:9px;overflow:hidden;opacity:0;pointer-events:none';
-  document.body.appendChild(hiddenBox);
-
   const videoPool = new Map(); // url -> HTMLVideoElement
   async function getVideo(clip) {
     let v = videoPool.get(clip.url);
     if (v) return v;
     v = document.createElement('video');
-    v.muted = true;
-    v.playsInline = true;
     v.preload = 'auto';
+    v.loop = true; // 書き出し中にデコードが止まらないよう、末尾に達しても再生を続ける
+    // 画面内に極小・ほぼ透明で置き、muted再生でデコードを起動する（iOSで黒フレームにしないため）
+    attachDecodableVideo(v);
     v.src = clip.url;
-    v.style.cssText = 'width:16px;height:9px';
-    hiddenBox.appendChild(v);
     await new Promise((res, rej) => {
       const ok = () => { cleanup(); res(); };
       const ng = () => { cleanup(); rej(new Error('動画を開けません: ' + clip.name)); };
@@ -117,6 +110,7 @@ export async function exportVideoWC(project, { onProgress = () => {} } = {}) {
       v.addEventListener('error', ng);
       setTimeout(ok, 8000); // 保険
     });
+    await primeVideo(v); // 再生してデコードパイプラインを起動（このまま再生状態を保つ）
     videoPool.set(clip.url, v);
     return v;
   }
@@ -188,9 +182,13 @@ export async function exportVideoWC(project, { onProgress = () => {} } = {}) {
     return { blob, filename: `${project.name || 'movie'}.mp4`, mimeType: 'video/mp4' };
   } finally {
     try { videoEncoder.close(); } catch { }
-    for (const v of videoPool.values()) { v.removeAttribute('src'); v.load(); }
+    for (const v of videoPool.values()) {
+      try { v.pause(); } catch { }
+      v.removeAttribute('src');
+      v.load();
+      v.remove();
+    }
     videoPool.clear();
-    hiddenBox.remove();
   }
 }
 

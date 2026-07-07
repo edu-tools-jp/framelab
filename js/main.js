@@ -309,6 +309,16 @@ window.addEventListener('DOMContentLoaded', () => {
   // PWA: 本番（https）のみサービスワーカーを登録
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
     navigator.serviceWorker.register('sw.js').catch(() => { });
+    // 新バージョンが有効化されたら自動でリロードして最新にする（更新の取りこぼし防止）。
+    // ただし書き出し中は作業が消えないようリロードを見送る。
+    if (navigator.serviceWorker.controller) {
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing || state.exporting) return;
+        refreshing = true;
+        location.reload();
+      });
+    }
   }
 
   if (new URLSearchParams(location.search).get('dev') === '1') {

@@ -27,16 +27,37 @@ export async function importFiles(files) {
   return clips;
 }
 
+// iOS Safari対策：一度も再生していない/画面に無い<video>はフレームをデコードしないため、
+// canvasに描くと真っ黒になる。そこで「画面内に極小・ほぼ透明で置く」＋「muted再生で
+// デコードを起動する」ことで、シークしたフレームを確実に取り込めるようにする。
+export function attachDecodableVideo(video) {
+  video.muted = true;
+  video.defaultMuted = true;
+  video.playsInline = true;
+  video.setAttribute('muted', '');
+  video.setAttribute('playsinline', '');
+  // 右下に2px・ほぼ透明で配置（opacity:0やdisplay:noneだとiOSがデコードを省略する）
+  video.style.cssText =
+    'position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:0.01;z-index:2147483647;pointer-events:none;border:0;background:#000';
+  if (!video.isConnected) document.body.appendChild(video);
+}
+
+// muted再生でデコードパイプラインを起動する（iOSでdrawImageが黒くならないための肝）
+export async function primeVideo(video) {
+  try {
+    await video.play();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function buildVideoClip(file) {
   const url = URL.createObjectURL(file);
   const video = document.createElement('video');
-  video.playsInline = true;
-  video.muted = true;
   video.preload = 'auto';
+  attachDecodableVideo(video);
   video.src = url;
-  // iOSはDOM外の<video>だとシーク後のフレーム取得が不安定なので、極小・不可視で一時的に置く
-  video.style.cssText = 'position:fixed;left:-9999px;top:0;width:16px;height:9px;opacity:0;pointer-events:none';
-  document.body.appendChild(video);
 
   await eventOnce(video, 'loadedmetadata', 15000);
   let duration = video.duration;
@@ -62,7 +83,10 @@ async function buildVideoClip(file) {
     thumbs: [],
   };
 
+  // デコードを起動してからサムネイルを取り出す
+  await primeVideo(video);
   clip.thumbs = await extractThumbs(video, duration);
+  video.pause();
   video.removeAttribute('src');
   video.load();
   video.remove();
@@ -112,32 +136,32 @@ async function extractThumbs(video, duration) {
 }
 
 // 指定時刻へシークし、そのフレームが「実際に描画可能」になるまで待つ。
-// iOS Safariは 'seeked' 直後だと canvas が黒くなるため requestVideoFrameCallback を使う
+// 手順: currentTime設定 → 'seeked' → 提示フレーム(rVFC)を1枚待つ。
+// これで iOS でも drawImage が黒くならない（デコード起動は attachDecodableVideo+primeVideo が担当）
 export function seekToPaintable(video, t) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     let settled = false;
     const finish = () => { if (settled) return; settled = true; cleanup(); resolve(); };
-    const fail = () => { if (settled) return; settled = true; cleanup(); reject(new Error('シーク失敗')); };
     const timer = setTimeout(finish, 4000); // 保険：待ちすぎない
-    const onErr = () => fail();
     const cleanup = () => {
       clearTimeout(timer);
-      video.removeEventListener('error', onErr);
+      video.removeEventListener('error', finish);
+      video.removeEventListener('seeked', onSeeked);
     };
-    video.addEventListener('error', onErr, { once: true });
+    const waitFrame = () => {
+      if ('requestVideoFrameCallback' in video) video.requestVideoFrameCallback(() => finish());
+      else requestAnimationFrame(() => requestAnimationFrame(finish));
+    };
+    const onSeeked = () => { video.removeEventListener('seeked', onSeeked); waitFrame(); };
 
-    if ('requestVideoFrameCallback' in video) {
-      // 新しいフレームが実際に提示されたら解決（黒フレーム対策の本命）
-      video.requestVideoFrameCallback(() => finish());
-      video.currentTime = t;
+    video.addEventListener('error', finish, { once: true });
+
+    if (Math.abs(video.currentTime - t) < 0.001) {
+      // すでにその位置にいる場合は seeked が発火しないので、そのまま1フレーム待つ
+      waitFrame();
     } else {
-      const onSeeked = () => {
-        video.removeEventListener('seeked', onSeeked);
-        // rVFC非対応環境では1フレーム分待ってから描く
-        requestAnimationFrame(() => requestAnimationFrame(finish));
-      };
       video.addEventListener('seeked', onSeeked);
-      video.currentTime = t;
+      try { video.currentTime = t; } catch { finish(); }
     }
   });
 }
