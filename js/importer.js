@@ -34,6 +34,9 @@ async function buildVideoClip(file) {
   video.muted = true;
   video.preload = 'auto';
   video.src = url;
+  // iOSはDOM外の<video>だとシーク後のフレーム取得が不安定なので、極小・不可視で一時的に置く
+  video.style.cssText = 'position:fixed;left:-9999px;top:0;width:16px;height:9px;opacity:0;pointer-events:none';
+  document.body.appendChild(video);
 
   await eventOnce(video, 'loadedmetadata', 15000);
   let duration = video.duration;
@@ -62,6 +65,7 @@ async function buildVideoClip(file) {
   clip.thumbs = await extractThumbs(video, duration);
   video.removeAttribute('src');
   video.load();
+  video.remove();
   return clip;
 }
 
@@ -97,8 +101,7 @@ async function extractThumbs(video, duration) {
   for (let i = 0; i < count; i++) {
     const t = duration * (i + 0.5) / count;
     try {
-      video.currentTime = Math.min(t, Math.max(0, duration - 0.1));
-      await eventOnce(video, 'seeked', 5000);
+      await seekToPaintable(video, Math.min(t, Math.max(0, duration - 0.1)));
       drawCover(ctx, video, THUMB_W, THUMB_H);
       thumbs.push(canvas.toDataURL('image/jpeg', 0.6));
     } catch {
@@ -106,6 +109,37 @@ async function extractThumbs(video, duration) {
     }
   }
   return thumbs;
+}
+
+// 指定時刻へシークし、そのフレームが「実際に描画可能」になるまで待つ。
+// iOS Safariは 'seeked' 直後だと canvas が黒くなるため requestVideoFrameCallback を使う
+export function seekToPaintable(video, t) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = () => { if (settled) return; settled = true; cleanup(); resolve(); };
+    const fail = () => { if (settled) return; settled = true; cleanup(); reject(new Error('シーク失敗')); };
+    const timer = setTimeout(finish, 4000); // 保険：待ちすぎない
+    const onErr = () => fail();
+    const cleanup = () => {
+      clearTimeout(timer);
+      video.removeEventListener('error', onErr);
+    };
+    video.addEventListener('error', onErr, { once: true });
+
+    if ('requestVideoFrameCallback' in video) {
+      // 新しいフレームが実際に提示されたら解決（黒フレーム対策の本命）
+      video.requestVideoFrameCallback(() => finish());
+      video.currentTime = t;
+    } else {
+      const onSeeked = () => {
+        video.removeEventListener('seeked', onSeeked);
+        // rVFC非対応環境では1フレーム分待ってから描く
+        requestAnimationFrame(() => requestAnimationFrame(finish));
+      };
+      video.addEventListener('seeked', onSeeked);
+      video.currentTime = t;
+    }
+  });
 }
 
 function drawCover(ctx, source, w, h) {

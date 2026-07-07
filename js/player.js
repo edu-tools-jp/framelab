@@ -2,9 +2,8 @@
 // タイムライン上のクリップを順番に canvas へ描画し、音声も同期再生する。
 // 書き出し(exporter.js)もこの canvas と音声グラフをそのまま録画する。
 
-import { state, on, emit, findClipAt, totalDuration, setTime, setPlaying, captionAtSource } from './store.js';
-import { processFrame } from './glfx.js';
-import { drawTitles } from './titles.js';
+import { state, on, emit, findClipAt, totalDuration, setTime, setPlaying } from './store.js';
+import { compositeFrame } from './renderer.js';
 import { getAnalysisAudio, detectSilences, invertToKeep } from './audio.js';
 
 let canvas, ctx;
@@ -355,103 +354,14 @@ function stopAtEnd() {
 function drawActive() {
   if (!active) { clearCanvas(); return; }
   const { clip } = active;
-  let source = clip.kind === 'video' ? active.video : clip.bitmap;
+  const source = clip.kind === 'video' ? active.video : clip.bitmap;
   if (!source) { clearCanvas(); return; }
-
-  // LUT（カラーグレーディング）
-  if (clip.lut?.id) {
-    const graded = processFrame(source, clip.lut.id, clip.lut.intensity ?? 1);
-    if (graded) source = graded;
-  }
-
-  drawContain(source);
-  drawTitles(ctx, canvas.width, canvas.height, state.currentTime);
-  drawCaption(clip);
-}
-
-// ---- 字幕描画（プレビューにも書き出しにもそのまま反映される）----
-
-function drawCaption(clip) {
-  const style = state.project?.subtitleStyle;
-  if (!style?.visible) return;
-  // クリップ内のソース時間から表示すべき字幕を探す
-  const srcT = clip.in + Math.max(0, state.currentTime - active.start);
-  const seg = captionAtSource(clip.mediaId, srcT);
-  if (!seg) return;
-
-  const W = canvas.width, H = canvas.height;
-  const px = Math.round(H * style.size);
-  const family = style.font === 'serif'
-    ? '"Hiragino Mincho ProN", "Yu Mincho", serif'
-    : '-apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif';
-  ctx.font = `700 ${px}px ${family}`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-
-  const lines = wrapText(seg.text, W * 0.9);
-  const lineH = px * 1.35;
-  const padY = H * 0.05;
-  let baseY = style.position === 'top'
-    ? padY + lineH
-    : H - padY - (lines.length - 1) * lineH;
-
-  for (let i = 0; i < lines.length; i++) {
-    const y = baseY + i * lineH;
-    const line = lines[i];
-    if (style.bg) {
-      const w = ctx.measureText(line).width;
-      const bx = W / 2 - w / 2 - px * 0.4;
-      const by = y - px * 1.05;
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      roundRect(bx, by, w + px * 0.8, px * 1.4, px * 0.2);
-    }
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = px * 0.16;
-    ctx.strokeStyle = style.outline;
-    ctx.strokeText(line, W / 2, y);
-    ctx.fillStyle = style.color;
-    ctx.fillText(line, W / 2, y);
-  }
-}
-
-function wrapText(text, maxWidth) {
-  const lines = [];
-  let line = '';
-  for (const ch of text) {
-    if (ch === '\n') { lines.push(line); line = ''; continue; }
-    if (ctx.measureText(line + ch).width > maxWidth && line) {
-      lines.push(line);
-      line = ch;
-    } else {
-      line += ch;
-    }
-  }
-  if (line) lines.push(line);
-  return lines.slice(0, 3); // 最大3行まで
-}
-
-function roundRect(x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
-  ctx.fill();
-}
-
-// アスペクト比を保って中央に描画（縦プロジェクト×横素材などは黒帯）
-function drawContain(source) {
-  const W = canvas.width, H = canvas.height;
-  const sw = source.videoWidth || source.width;
-  const sh = source.videoHeight || source.height;
-  if (!sw || !sh) return;
-  const scale = Math.min(W / sw, H / sh);
-  const dw = sw * scale, dh = sh * scale;
-  ctx.fillStyle = '#000';
-  ctx.fillRect(0, 0, W, H);
-  ctx.drawImage(source, (W - dw) / 2, (H - dh) / 2, dw, dh);
+  const srcTime = clip.in + Math.max(0, state.currentTime - active.start);
+  compositeFrame(ctx, canvas.width, canvas.height, {
+    project: state.project,
+    clip, source, srcTime,
+    timelineTime: state.currentTime,
+  });
 }
 
 function clearCanvas() {

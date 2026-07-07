@@ -1,15 +1,43 @@
-// exporter.js — 動画の書き出し
-// プレビューと同じ canvas + 音声グラフをリアルタイム録画して mp4/webm を生成する。
-// （Safari は mp4、Chrome 等は webm。将来 WebCodecs による高速書き出しへ差し替え予定）
+// exporter.js — 動画の書き出し（司令塔）
+// WebCodecsが使えれば1フレームずつ確実にエンコード（滑らか・推奨）。
+// 使えない古い環境では、従来のリアルタイム録画へ自動フォールバックする。
 
 import { state, emit, totalDuration } from './store.js';
 import { getCanvas, ensureAudio, play, pause, seek } from './player.js';
+import { isWebCodecsExportSupported, exportVideoWC } from './exporter-wc.js';
 
 let recorder = null;
 let wakeLock = null;
 
 export function isExportSupported() {
-  return typeof MediaRecorder !== 'undefined';
+  return isWebCodecsExportSupported() || typeof MediaRecorder !== 'undefined';
+}
+
+// 書き出しの司令塔。まずWebCodecsを試し、失敗したらリアルタイム録画へ切り替える。
+export async function exportVideo() {
+  if (!state.project || !state.project.clips.length) {
+    throw new Error('クリップがありません');
+  }
+  if (isWebCodecsExportSupported()) {
+    try {
+      state.exporting = true;
+      emit('exporting');
+      try { wakeLock = await navigator.wakeLock?.request('screen'); } catch { }
+      const result = await exportVideoWC(state.project, {
+        onProgress: (p) => emit('export-progress', p),
+      });
+      return result;
+    } catch (e) {
+      console.warn('WebCodecs書き出しに失敗、従来方式へ切替:', e);
+      // 下のリアルタイム録画へフォールバック
+    } finally {
+      try { wakeLock?.release(); } catch { }
+      wakeLock = null;
+      state.exporting = false;
+      emit('exporting');
+    }
+  }
+  return exportVideoMediaRecorder();
 }
 
 function pickMimeType() {
@@ -23,9 +51,8 @@ function pickMimeType() {
   return candidates.find(t => MediaRecorder.isTypeSupported(t)) || '';
 }
 
-// 書き出し実行。進捗は 'export-progress' イベント(0〜1)で通知。
-// 結果 { blob, filename, mimeType } を resolve する。
-export async function exportVideo() {
+// 従来方式：プレビュー画面をリアルタイム録画する（WebCodecs非対応環境向けのフォールバック）
+async function exportVideoMediaRecorder() {
   if (!state.project || !state.project.clips.length) {
     throw new Error('クリップがありません');
   }
