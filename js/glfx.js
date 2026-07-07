@@ -131,8 +131,8 @@ export function processFrame(source, lutId, intensity) {
   const entry = lutTextures.get(lutId);
   if (!entry) return null;
 
-  const w = source.videoWidth || source.width;
-  const h = source.videoHeight || source.height;
+  const w = source.videoWidth || source.displayWidth || source.width;
+  const h = source.videoHeight || source.displayHeight || source.height;
   if (!w || !h) return null;
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width = w;

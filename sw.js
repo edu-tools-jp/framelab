@@ -1,7 +1,7 @@
 // sw.js — オフライン対応（アプリ本体をキャッシュ）
 // 更新を配布するときは VERSION を上げること
 
-const VERSION = 'framelab-v0.4.1';
+const VERSION = 'framelab-v0.5.0';
 const APP_SHELL = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const APP_SHELL = [
   './js/timeline.js',
   './js/exporter.js',
   './js/exporter-wc.js',
+  './js/decode.js',
   './js/renderer.js',
   './js/audio-mix.js',
   './js/db.js',
@@ -26,6 +27,7 @@ const APP_SHELL = [
   './js/titles.js',
   './js/music.js',
   './js/vendor/mp4-muxer.mjs',
+  './js/vendor/mp4box.mjs',
   './lut/manifest.json',
   './manifest.webmanifest',
   './icons/icon-180.png',

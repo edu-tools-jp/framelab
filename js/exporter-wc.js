@@ -7,6 +7,7 @@ import { compositeFrame } from './renderer.js';
 import { renderProjectAudio } from './audio-mix.js';
 import { seekToPaintable, attachDecodableVideo, primeVideo } from './importer.js';
 import { ensureLutLoaded } from './luts.js';
+import { ClipDecoder, isDecodeSupported } from './decode.js';
 
 export function isWebCodecsExportSupported() {
   return typeof VideoEncoder !== 'undefined'
@@ -115,56 +116,97 @@ export async function exportVideoWC(project, { onProgress = () => {} } = {}) {
     return v;
   }
 
-  // クリップ列を先頭から時系列に走査するためのカーソル
-  function clipAtFrame(f) {
-    const t = f / fps;
-    let acc = 0;
-    for (const clip of clips) {
-      const dur = clip.out - clip.in;
-      if (t < acc + dur - 1e-6 || clip === clips[clips.length - 1]) {
-        return { clip, offset: Math.min(Math.max(0, t - acc), dur), timelineTime: t };
-      }
-      acc += dur;
-    }
-    return null;
-  }
-
   const usPerFrame = 1e6 / fps;
   const keyEvery = Math.round(fps * 2); // 2秒ごとにキーフレーム
 
-  try {
-    for (let f = 0; f < totalFrames; f++) {
+  // クリップごとの出力フレーム境界（丸め誤差で隙間/重複が出ないよう連続させる）
+  const clipStartSec = [];
+  const frameBound = [];
+  {
+    let acc = 0;
+    for (const c of clips) { clipStartSec.push(acc); frameBound.push(Math.round(acc * fps)); acc += (c.out - c.in); }
+    frameBound.push(totalFrames);
+  }
+
+  // 1枚合成してエンコードする共通処理
+  const composeAndEncode = (f, clip, source, srcTime) => {
+    compositeFrame(ctx, W, H, { project, clip, source, srcTime, timelineTime: f / fps });
+    const frame = new VideoFrame(canvas, { timestamp: Math.round(f * usPerFrame), duration: Math.round(usPerFrame) });
+    videoEncoder.encode(frame, { keyFrame: f % keyEvery === 0 });
+    frame.close();
+  };
+  const waitEncoder = async () => {
+    while (videoEncoder.encodeQueueSize > 8) {
+      await new Promise(r => setTimeout(r, 3));
       if (encodeError) throw encodeError;
-      const hit = clipAtFrame(f);
-      if (!hit) break;
-      const { clip, offset, timelineTime } = hit;
+    }
+  };
 
-      let source = null;
-      if (clip.kind === 'video') {
-        const v = await getVideo(clip);
-        await seekToPaintable(v, Math.min(clip.in + offset, (clip.srcDuration || v.duration) - 0.001));
-        source = v;
+  try {
+    for (let ci = 0; ci < clips.length; ci++) {
+      const clip = clips[ci];
+      const startF = frameBound[ci], endF = frameBound[ci + 1];
+      const startSec = clipStartSec[ci];
+      const srcTimeAt = (f) => Math.min(clip.out - 1e-4, Math.max(clip.in, clip.in + (f / fps - startSec)));
+
+      if (clip.kind !== 'video') {
+        // 写真・静止クリップ
+        const source = clip.bitmap || null;
+        for (let f = startF; f < endF; f++) {
+          if (encodeError) throw encodeError;
+          composeAndEncode(f, clip, source, clip.in);
+          await waitEncoder();
+          if (f % 3 === 0) onProgress(0.05 + 0.8 * (f / totalFrames));
+        }
+        continue;
+      }
+
+      // 動画クリップ：まず連続デコードを試す。失敗したらシーク方式にフォールバック。
+      let dec = null;
+      if (isDecodeSupported()) {
+        try {
+          dec = new ClipDecoder(clip.file, clip.mediaId);
+          await dec.init(clip.in);
+        } catch (e) {
+          console.warn('連続デコード不可、シーク方式に切替:', clip.name, e);
+          try { dec && dec.close(); } catch { }
+          dec = null;
+        }
+      }
+
+      if (dec) {
+        let cur = null, nxt = await dec.pull();
+        try {
+          for (let f = startF; f < endF; f++) {
+            if (encodeError) throw encodeError;
+            const srcUs = srcTimeAt(f) * 1e6;
+            // srcTime以下で最も新しいフレームまで進める（余ったフレームは閉じてメモリ解放）
+            while (nxt && nxt.timestamp <= srcUs) {
+              if (cur) cur.close();
+              cur = nxt;
+              nxt = await dec.pull();
+            }
+            const source = cur || nxt;
+            composeAndEncode(f, clip, source, srcTimeAt(f));
+            await waitEncoder();
+            if (f % 3 === 0) onProgress(0.05 + 0.8 * (f / totalFrames));
+          }
+        } finally {
+          if (cur) cur.close();
+          if (nxt) nxt.close();
+          dec.close();
+        }
       } else {
-        source = clip.bitmap || null;
+        // フォールバック：フレームごとにシーク（遅いが確実）
+        const v = await getVideo(clip);
+        for (let f = startF; f < endF; f++) {
+          if (encodeError) throw encodeError;
+          await seekToPaintable(v, Math.min(srcTimeAt(f), (clip.srcDuration || v.duration) - 0.001));
+          composeAndEncode(f, clip, v, srcTimeAt(f));
+          await waitEncoder();
+          if (f % 3 === 0) onProgress(0.05 + 0.8 * (f / totalFrames));
+        }
       }
-
-      compositeFrame(ctx, W, H, {
-        project, clip, source,
-        srcTime: clip.in + offset,
-        timelineTime,
-      });
-
-      const frame = new VideoFrame(canvas, { timestamp: Math.round(f * usPerFrame), duration: Math.round(usPerFrame) });
-      videoEncoder.encode(frame, { keyFrame: f % keyEvery === 0 });
-      frame.close();
-
-      // エンコーダが詰まったら少し待つ（メモリ肥大の防止）
-      while (videoEncoder.encodeQueueSize > 8) {
-        await new Promise(r => setTimeout(r, 4));
-        if (encodeError) throw encodeError;
-      }
-
-      if (f % 3 === 0) onProgress(0.05 + 0.8 * (f / totalFrames));
     }
 
     await videoEncoder.flush();

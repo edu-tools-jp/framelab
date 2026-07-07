@@ -26,8 +26,8 @@ export function compositeFrame(ctx, W, H, { project, clip, source, srcTime, time
 
 // アスペクト比を保って中央に描画（縦プロジェクト×横素材などは黒帯）
 export function drawContain(ctx, W, H, source) {
-  const sw = source.videoWidth || source.width;
-  const sh = source.videoHeight || source.height;
+  const sw = source.videoWidth || source.displayWidth || source.width;
+  const sh = source.videoHeight || source.displayHeight || source.height;
   if (!sw || !sh) return;
   const scale = Math.min(W / sw, H / sh);
   const dw = sw * scale, dh = sh * scale;
