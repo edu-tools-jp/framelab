@@ -1,0 +1,89 @@
+{
+ "size": 33,
+ "luts": [
+  {
+   "id": "std_film",
+   "name": "フィルム",
+   "group": "スタンダード",
+   "file": "std_film.bin"
+  },
+  {
+   "id": "std_teal_orange",
+   "name": "シネマティック",
+   "group": "スタンダード",
+   "file": "std_teal_orange.bin"
+  },
+  {
+   "id": "std_mono",
+   "name": "モノクロ",
+   "group": "スタンダード",
+   "file": "std_mono.bin"
+  },
+  {
+   "id": "std_vivid",
+   "name": "ビビッド",
+   "group": "スタンダード",
+   "file": "std_vivid.bin"
+  },
+  {
+   "id": "std_cool",
+   "name": "クール",
+   "group": "スタンダード",
+   "file": "std_cool.bin"
+  },
+  {
+   "id": "std_warm",
+   "name": "ウォーム",
+   "group": "スタンダード",
+   "file": "std_warm.bin"
+  },
+  {
+   "id": "am_base_color",
+   "name": "Base Color",
+   "group": "Apple Log用",
+   "file": "am_base_color.bin"
+  },
+  {
+   "id": "am_beautiful_travel",
+   "name": "Beautiful Travel",
+   "group": "Apple Log用",
+   "file": "am_beautiful_travel.bin"
+  },
+  {
+   "id": "am_beauty_look",
+   "name": "Beauty Look",
+   "group": "Apple Log用",
+   "file": "am_beauty_look.bin"
+  },
+  {
+   "id": "am_blue_aesthetic",
+   "name": "Blue Aesthetic",
+   "group": "Apple Log用",
+   "file": "am_blue_aesthetic.bin"
+  },
+  {
+   "id": "am_classic_american",
+   "name": "Classic American",
+   "group": "Apple Log用",
+   "file": "am_classic_american.bin"
+  },
+  {
+   "id": "am_deep_green",
+   "name": "Deep Green",
+   "group": "Apple Log用",
+   "file": "am_deep_green.bin"
+  },
+  {
+   "id": "am_natural_film",
+   "name": "Natural Film",
+   "group": "Apple Log用",
+   "file": "am_natural_film.bin"
+  },
+  {
+   "id": "am_romance_hour",
+   "name": "Romance Hour",
+   "group": "Apple Log用",
+   "file": "am_romance_hour.bin"
+  }
+ ]
+}

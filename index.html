@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#101216">
+  <title>FrameLab</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+  <!-- ホーム：新規プロジェクト -->
+  <section class="screen active" id="screen-home">
+    <header class="home-header">
+      <h1>FRAMELAB</h1>
+      <p class="sub">スマホでちゃんと編集できる、動画エディタ</p>
+    </header>
+
+    <div class="panel" id="project-list-panel" style="display:none">
+      <label class="field-label">保存済みプロジェクト</label>
+      <div id="project-list"></div>
+    </div>
+
+    <div class="panel">
+      <label class="field-label">プロジェクト名</label>
+      <input type="text" id="project-name" placeholder="例：夏の実験動画" autocomplete="off">
+
+      <label class="field-label">画面の向き</label>
+      <div class="choice-row">
+        <button class="choice" data-orient="landscape">
+          <span class="choice-icon frame-land"></span>横 16:9<small>YouTube向け</small>
+        </button>
+        <button class="choice" data-orient="portrait">
+          <span class="choice-icon frame-port"></span>縦 9:16<small>ショート/リール</small>
+        </button>
+      </div>
+
+      <label class="field-label">画質</label>
+      <div class="choice-row">
+        <button class="choice" data-res="1080">1080p<small>おすすめ・軽い</small></button>
+        <button class="choice" data-res="4k">4K<small>高画質・重い</small></button>
+      </div>
+
+      <label class="field-label">フレームレート</label>
+      <div class="choice-row">
+        <button class="choice" data-fps="30">30fps<small>標準</small></button>
+        <button class="choice" data-fps="60">60fps<small>なめらか</small></button>
+      </div>
+
+      <button class="btn primary big" id="btn-create">プロジェクトを作成</button>
+    </div>
+  </section>
+
+  <!-- エディタ -->
+  <section class="screen" id="screen-editor">
+    <header class="editor-header">
+      <button class="icon-btn" id="btn-back" title="ホームへ">‹</button>
+      <span id="editor-title">プロジェクト</span>
+      <button class="btn primary small" id="btn-export" disabled>書き出し</button>
+    </header>
+
+    <div class="preview-area">
+      <canvas id="preview-canvas"></canvas>
+      <div id="empty-state">
+        <p>まだ素材がありません</p>
+        <button class="btn primary" id="btn-add-empty">＋ 動画・写真を追加</button>
+      </div>
+    </div>
+
+    <div class="transport">
+      <button class="icon-btn play" id="btn-play">▶</button>
+      <span id="time-display">00:00.0 / 00:00.0</span>
+    </div>
+
+    <div class="toolbar">
+      <button class="tool" id="btn-add"><span>＋</span>追加</button>
+      <button class="tool" id="btn-split"><span>✂</span>分割</button>
+      <button class="tool" id="btn-delete" disabled><span>🗑</span>削除</button>
+      <button class="tool" id="btn-undo" disabled><span>↩</span>戻す</button>
+      <button class="tool" id="btn-jetcut"><span>⚡</span>自動カット</button>
+      <button class="tool" id="btn-subtitles"><span>字</span>字幕</button>
+      <button class="tool" id="btn-lut"><span>◐</span>色</button>
+      <button class="tool" id="btn-title"><span>T</span>タイトル</button>
+      <button class="tool" id="btn-music"><span>♪</span>音楽</button>
+      <button class="tool" id="btn-move-left" disabled><span>◀</span>前へ</button>
+      <button class="tool" id="btn-move-right" disabled><span>▶</span>後へ</button>
+      <button class="tool" id="btn-zoom-out"><span>−</span>縮小</button>
+      <button class="tool" id="btn-zoom-in"><span>＋</span>拡大</button>
+    </div>
+
+    <div id="timeline"></div>
+  </section>
+
+  <!-- 書き出しモーダル -->
+  <div class="modal" id="export-modal">
+    <div class="modal-box">
+      <h2>書き出し</h2>
+      <div class="progress"><div class="progress-bar" id="export-bar"></div></div>
+      <p id="export-msg"></p>
+      <div class="modal-actions" id="export-actions"></div>
+    </div>
+  </div>
+
+  <!-- ジェットカット設定モーダル -->
+  <div class="modal" id="jetcut-modal">
+    <div class="modal-box">
+      <div class="sheet-head">
+        <h2>⚡ 自動ジェットカット</h2>
+        <button class="icon-btn" id="jetcut-close">×</button>
+      </div>
+
+      <label class="field-label">何秒以上の無音をカットする？ <b id="jetcut-minsil-val">0.6秒</b></label>
+      <input type="range" id="jetcut-minsil" min="0.3" max="2.0" step="0.1" value="0.6">
+
+      <label class="field-label">検出の強さ</label>
+      <div class="choice-row">
+        <button class="choice sm" data-sens="low">ひかえめ</button>
+        <button class="choice sm on" data-sens="mid">標準</button>
+        <button class="choice sm" data-sens="high">強め</button>
+      </div>
+
+      <label class="field-label">前後に残す余白 <b id="jetcut-pad-val">120ms</b></label>
+      <input type="range" id="jetcut-pad" min="0.05" max="0.3" step="0.01" value="0.12">
+
+      <label class="check-row">
+        <input type="checkbox" id="jetcut-filler">
+        フィラー（えー、あのー 等）もカット
+      </label>
+      <p class="hint" id="jetcut-filler-hint">※先に「字幕」を生成すると使えるようになります</p>
+
+      <p class="result-msg" id="jetcut-result"></p>
+      <div class="modal-actions">
+        <button class="btn" id="btn-jetcut-analyze">解析する</button>
+        <button class="btn primary" id="btn-jetcut-apply" disabled>カットを適用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 字幕パネル -->
+  <div class="modal sheet" id="subtitle-sheet">
+    <div class="modal-box sheet-box">
+      <div class="sheet-head">
+        <h2>字幕</h2>
+        <div class="sheet-tabs">
+          <button data-subtab="list" class="on">リスト</button>
+          <button data-subtab="style">スタイル</button>
+          <button data-subtab="gen">生成</button>
+        </div>
+        <button class="icon-btn" id="subtitle-close">×</button>
+      </div>
+
+      <div class="subtab active" id="subtab-list">
+        <div id="caption-list"></div>
+      </div>
+
+      <div class="subtab" id="subtab-style">
+        <label class="check-row">
+          <input type="checkbox" id="sub-visible" checked>
+          字幕を表示する
+        </label>
+        <label class="field-label">デザイン（全字幕にまとめて反映）</label>
+        <div class="choice-row">
+          <button class="choice sm preset-standard" data-preset="standard">標準</button>
+          <button class="choice sm preset-yellow" data-preset="yellow">イエロー</button>
+          <button class="choice sm preset-band" data-preset="band">黒帯</button>
+          <button class="choice sm preset-cinema" data-preset="cinema">シネマ</button>
+        </div>
+        <label class="field-label">文字の大きさ</label>
+        <input type="range" id="sub-size" min="0.03" max="0.09" step="0.005" value="0.05">
+        <label class="field-label">位置</label>
+        <div class="choice-row">
+          <button class="choice sm on" data-subpos="bottom">下</button>
+          <button class="choice sm" data-subpos="top">上</button>
+        </div>
+      </div>
+
+      <div class="subtab" id="subtab-gen">
+        <p class="hint">動画の音声から日本語字幕を自動作成します。AIはこの端末の中で動くので、動画が外部に送られることはありません。</p>
+        <label class="field-label">AIモデル</label>
+        <div class="choice-row">
+          <button class="choice" data-model="accurate">高精度<small>おすすめ・初回 約250MB</small></button>
+          <button class="choice" data-model="fast">高速<small>初回 約80MB</small></button>
+        </div>
+        <div class="progress" style="margin-top:16px"><div class="progress-bar" id="subgen-bar"></div></div>
+        <p class="hint" id="subgen-msg"></p>
+        <div class="modal-actions">
+          <button class="btn primary" id="btn-generate-subs">字幕を生成</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LUT（色）パネル -->
+  <div class="modal" id="lut-modal">
+    <div class="modal-box sheet-box">
+      <div class="sheet-head">
+        <h2>◐ カラー（LUT）</h2>
+        <button class="icon-btn" id="lut-close">×</button>
+      </div>
+      <p class="hint">選択中のクリップに適用されます。「Apple Log用」はiPhoneのApple Log撮影素材向けです。</p>
+      <div id="lut-list"></div>
+      <label class="field-label">効果の強さ <b id="lut-intensity-val">100%</b></label>
+      <input type="range" id="lut-intensity" min="0" max="1" step="0.05" value="1" disabled>
+      <div class="modal-actions">
+        <button class="btn" id="btn-lut-all">すべてのクリップに適用</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- タイトルパネル -->
+  <div class="modal" id="title-modal">
+    <div class="modal-box sheet-box">
+      <div class="sheet-head">
+        <h2>T タイトル</h2>
+        <button class="icon-btn" id="title-close">×</button>
+      </div>
+
+      <div id="title-list-view">
+        <div id="title-list"></div>
+        <div class="modal-actions">
+          <button class="btn primary" id="btn-title-add">＋ 追加（現在位置に）</button>
+        </div>
+      </div>
+
+      <div id="title-editor" style="display:none">
+        <label class="field-label">テキスト（改行で複数行）</label>
+        <textarea id="title-text" rows="3" placeholder="例：水の温度と体積の実験&#10;第1回"></textarea>
+        <label class="field-label">テンプレート</label>
+        <div class="choice-row wrap" id="title-templates"></div>
+        <label class="field-label">表示時間 <b id="title-duration-val">4.0秒</b></label>
+        <input type="range" id="title-duration" min="1" max="15" step="0.5" value="4">
+        <p class="hint" id="title-editor-pos"></p>
+        <div class="modal-actions">
+          <button class="btn danger" id="btn-title-delete" style="display:none">削除</button>
+          <button class="btn primary" id="btn-title-save">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 音楽・アテレコパネル -->
+  <div class="modal" id="music-modal">
+    <div class="modal-box sheet-box">
+      <div class="sheet-head">
+        <h2>♪ 音楽・アテレコ</h2>
+        <button class="icon-btn" id="music-close">×</button>
+      </div>
+      <div id="music-list"></div>
+      <div class="modal-actions" style="justify-content:space-between">
+        <button class="btn" id="btn-rec-start">● アテレコ録音</button>
+        <div id="rec-live" style="display:none">
+          <span class="rec-dot"></span><span id="rec-elapsed">00:00.0</span>
+          <button class="btn danger" id="btn-rec-stop">■ 停止</button>
+        </div>
+        <button class="btn primary" id="btn-music-add">＋ 音楽を追加</button>
+      </div>
+      <p class="hint">録音は現在の再生位置から映像を見ながら行えます（本編の音は自動でミュート）。外部マイクを繋ぐと自動で使われます。</p>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <input type="file" id="file-input" accept="video/*,image/*" multiple hidden>
+  <input type="file" id="audio-file-input" accept="audio/*" multiple hidden>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
