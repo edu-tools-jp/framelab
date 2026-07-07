@@ -259,20 +259,20 @@ button:disabled { opacity: 0.35; cursor: default; }
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 2px;
+  width: 3px;
   background: var(--accent);
   pointer-events: none;
   z-index: 5;
 }
 
-/* 再生ヘッドのつまみ：指で掴んでドラッグできる */
+/* 再生ヘッドのつまみ：線のどこを触ってもドラッグできる（当たり判定は全高×48px） */
 .tl-ph-handle {
   position: absolute;
-  top: -2px;
+  top: 0;
+  bottom: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 36px;   /* 見た目より大きい当たり判定 */
-  height: 40px;
+  width: 48px;
   pointer-events: auto;
   touch-action: none;
   cursor: grab;
@@ -280,22 +280,22 @@ button:disabled { opacity: 0.35; cursor: default; }
 .tl-ph-handle::before {
   content: '';
   position: absolute;
-  top: 2px;
+  top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 16px;
-  height: 16px;
-  border-radius: 5px;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
   background: var(--accent);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.55);
 }
 .tl-ph-handle::after {
   content: '';
   position: absolute;
-  top: 18px;
+  top: 26px;
   left: 50%;
   transform: translateX(-50%);
-  border: 5px solid transparent;
+  border: 8px solid transparent;
   border-top-color: var(--accent);
 }
 

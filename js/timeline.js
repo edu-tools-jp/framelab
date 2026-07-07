@@ -7,6 +7,8 @@ let scrollEl, contentEl, rulerEl, trackEl, playheadEl;
 let scrubbing = false;
 let resumeAfterScrub = false;
 let lastScrubAt = 0;
+let scrubStartX = 0;
+let scrubMoved = false;
 
 const TRACK_H = 64;
 
@@ -41,7 +43,12 @@ export function initTimeline(root) {
     beginScrub(e);
   });
   handleEl.addEventListener('pointermove', (e) => { if (scrubbing) scrubTo(e); });
-  handleEl.addEventListener('pointerup', endScrub);
+  handleEl.addEventListener('pointerup', (e) => {
+    const wasMoved = scrubMoved;
+    endScrub();
+    // 動かさず軽くタップしただけなら、下にあるクリップの選択として扱う
+    if (!wasMoved) tapThroughToClip(e, handleEl);
+  });
   handleEl.addEventListener('pointercancel', endScrub);
 
   // ルーラー／空きスペースのドラッグでも動かせる
@@ -57,6 +64,8 @@ export function initTimeline(root) {
 
 function beginScrub(e) {
   scrubbing = true;
+  scrubStartX = e.clientX;
+  scrubMoved = false;
   resumeAfterScrub = state.playing;
   if (state.playing) pause(); // ドラッグ中は一時停止（終わったら再開）
   lastScrubAt = 0;
@@ -71,6 +80,7 @@ function endScrub() {
 }
 
 function scrubTo(e) {
+  if (Math.abs(e.clientX - scrubStartX) > 8) scrubMoved = true;
   // シークの連発を抑える（40ms間隔）
   const now = performance.now();
   if (now - lastScrubAt < 40) return;
@@ -78,6 +88,14 @@ function scrubTo(e) {
   const rect = scrollEl.getBoundingClientRect();
   const x = e.clientX - rect.left + scrollEl.scrollLeft;
   seek(Math.max(0, x / state.pxPerSec));
+}
+
+// つまみ越しのタップを下のクリップに届ける
+function tapThroughToClip(e, handleEl) {
+  handleEl.style.pointerEvents = 'none';
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  handleEl.style.pointerEvents = '';
+  el?.closest('.tl-clip')?.click();
 }
 
 export function setZoom(factor) {
