@@ -265,37 +265,44 @@ button:disabled { opacity: 0.35; cursor: default; }
   z-index: 5;
 }
 
-/* 再生ヘッドのつまみ：線のどこを触ってもドラッグできる（当たり判定は全高×48px） */
+/* 再生ヘッドのつまみ：線のどこを触ってもドラッグできる（当たり判定は全高×56px） */
 .tl-ph-handle {
   position: absolute;
   top: 0;
   bottom: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 48px;
+  width: 56px;
   pointer-events: auto;
   touch-action: none;
   cursor: grab;
 }
+/* 大きなつまみ本体（グリップ模様入り） */
 .tl-ph-handle::before {
   content: '';
   position: absolute;
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--accent);
-  box-shadow: 0 1px 5px rgba(0,0,0,0.55);
+  width: 38px;
+  height: 30px;
+  border-radius: 10px;
+  background:
+    linear-gradient(90deg,
+      transparent 13px, rgba(0,0,0,0.35) 13px, rgba(0,0,0,0.35) 15px,
+      transparent 15px, transparent 18px, rgba(0,0,0,0.35) 18px, rgba(0,0,0,0.35) 20px,
+      transparent 20px, transparent 23px, rgba(0,0,0,0.35) 23px, rgba(0,0,0,0.35) 25px,
+      transparent 25px),
+    var(--accent);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.6);
 }
 .tl-ph-handle::after {
   content: '';
   position: absolute;
-  top: 26px;
+  top: 29px;
   left: 50%;
   transform: translateX(-50%);
-  border: 8px solid transparent;
+  border: 11px solid transparent;
   border-top-color: var(--accent);
 }
 

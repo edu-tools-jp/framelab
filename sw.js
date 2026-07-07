@@ -1,7 +1,7 @@
 // sw.js — オフライン対応（アプリ本体をキャッシュ）
 // 更新を配布するときは VERSION を上げること
 
-const VERSION = 'framelab-v0.3.2';
+const VERSION = 'framelab-v0.3.3';
 const APP_SHELL = [
   './',
   './index.html',
